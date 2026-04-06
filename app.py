@@ -308,7 +308,7 @@ if run or "last_ticker" in st.session_state:
         sec_data = metrics[sec_col].dropna()
 
         if sec_col == "Amihud (×10⁶)":
-            log_amihud = np.log10(sec_data.replace(0, np.nan).dropna())
+            log_amihud = np.log10(sec_data.replace(0, np.nan).dropna()).abs()
             fig.add_trace(go.Scatter(
                 x=log_amihud.index,
                 y=log_amihud.values,
