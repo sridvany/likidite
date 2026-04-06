@@ -303,14 +303,13 @@ if run or "last_ticker" in st.session_state:
         sec_col  = _secondary
         sec_data = metrics[sec_col].dropna()
 
-        # Amihud: ham değeri çizgi olarak çiz (99p clip ile spike bastır)
+        # Amihud: percentile rank (0-100) — her zaman dalgalanır
         if sec_col == "Amihud (×10⁶)":
-            clip_val = sec_data.quantile(0.99)
-            clipped  = sec_data.clip(upper=clip_val)
+            ranked = sec_data.rank(pct=True) * 100
             fig.add_trace(go.Scatter(
-                x=clipped.index,
-                y=clipped.values,
-                name=sec_col,
+                x=ranked.index,
+                y=ranked.values,
+                name="Amihud Percentile",
                 line=dict(color="#f59e0b", width=1.2),
             ), secondary_y=True)
         else:
@@ -366,15 +365,14 @@ if run or "last_ticker" in st.session_state:
             gridcolor="#1e2235",
             secondary_y=False,
         )
-        amihud_max = float(sec_data.quantile(0.99)) if sec_col == "Amihud (×10⁶)" else None
         fig.update_yaxes(
-            title_text=sec_col,
+            title_text="Amihud Percentile (0-100)" if sec_col == "Amihud (×10⁶)" else sec_col,
             title_font=dict(color="#7dd3fc"),
             tickfont=dict(color="#7dd3fc"),
             showgrid=False,
             secondary_y=True,
             type="linear",
-            range=[0, 6] if sec_col == "Daily Range (%)" else [0, amihud_max],
+            range=[0, 6] if sec_col == "Daily Range (%)" else [0, 100],
         )
 
         st.plotly_chart(fig, use_container_width=True)
