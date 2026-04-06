@@ -303,16 +303,12 @@ if run or "last_ticker" in st.session_state:
         sec_col  = _secondary
         sec_data = metrics[sec_col].dropna()
 
-        # Amihud: rolling 252 günlük percentile rank
         if sec_col == "Amihud (×10⁶)":
-            window_p = 252
-            rolled = sec_data.rolling(window=window_p, min_periods=20).apply(
-                lambda x: (x[-1] > x[:-1]).sum() / (len(x) - 1) * 100, raw=True
-            )
+            log_amihud = np.log10(sec_data.replace(0, np.nan).dropna())
             fig.add_trace(go.Scatter(
-                x=rolled.index,
-                y=rolled.values,
-                name="Amihud Percentile (252g)",
+                x=log_amihud.index,
+                y=log_amihud.values,
+                name="log₁₀(Amihud)",
                 line=dict(color="#f59e0b", width=1.2),
             ), secondary_y=True)
         else:
@@ -369,13 +365,13 @@ if run or "last_ticker" in st.session_state:
             secondary_y=False,
         )
         fig.update_yaxes(
-            title_text="Amihud Percentile (0-100)" if sec_col == "Amihud (×10⁶)" else sec_col,
+            title_text="log₁₀(Amihud)" if sec_col == "Amihud (×10⁶)" else sec_col,
             title_font=dict(color="#7dd3fc"),
             tickfont=dict(color="#7dd3fc"),
             showgrid=False,
             secondary_y=True,
             type="linear",
-            range=[0, 6] if sec_col == "Daily Range (%)" else [0, 100],
+            range=[0, 6] if sec_col == "Daily Range (%)" else None,
         )
 
         st.plotly_chart(fig, use_container_width=True)
