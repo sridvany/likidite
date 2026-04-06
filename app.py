@@ -94,7 +94,18 @@ def fetch_live(ticker: str) -> pd.Series | None:
     except Exception:
         return None
 
-def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
+@st.cache_data(ttl=3600, show_spinner=False, persist=False)
+def fetch_oldest_date(ticker: str) -> str:
+    """Hissenin gerçek en eski veri tarihini döndür."""
+    try:
+        df = yf.download(ticker, start="1990-01-01", auto_adjust=True, progress=False)
+        if df.empty:
+            return "—"
+        return df.index.min().strftime("%d.%m.%Y")
+    except Exception:
+        return "—"
+
+
     """Günlük kapanış, güniçi değişim, Amihud, Daily Range hesapla."""
     out = pd.DataFrame(index=df.index)
     out["Kapanış (₺)"]     = df["Close"].round(2)
@@ -236,7 +247,7 @@ if run or "last_ticker" in st.session_state:
     if raw.empty:
         st.error(f"❌ {_ticker} için veri bulunamadı. Ticker'ı kontrol edin.")
     else:
-        oldest = raw.index.min().strftime("%d.%m.%Y")
+        oldest = fetch_oldest_date(_ticker)
         newest = raw.index.max().strftime("%d.%m.%Y")
         total  = len(raw)
 
