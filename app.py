@@ -167,7 +167,10 @@ def color_val(val, col):
         sign = "+" if val > 0 else ""
         return f'<span class="{cls}">{sign}{val:.2f}%</span>'
     if col == "Amihud (×10⁶)":
-        return f'<span class="neutral">{val:.4f}</span>'
+        log_val = abs(np.log10(val)) if val > 0 else np.nan
+        if np.isnan(log_val):
+            return '<span class="neutral">—</span>'
+        return f'<span class="neutral">{log_val:.2f}</span>'
     if col == "Daily Range (₺)":
         return f'<span class="neutral">{val:.2f}</span>'
     if col == "Daily Range (%)":
@@ -342,6 +345,7 @@ if run or "last_ticker" in st.session_state:
                         bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
             margin=dict(l=10, r=10, t=40, b=10),
             height=400,
+            dragmode="pan",
         )
         fig.update_xaxes(
             showgrid=False,
@@ -378,7 +382,7 @@ if run or "last_ticker" in st.session_state:
             range=[0, 6] if sec_col == "Daily Range (%)" else None,
         )
 
-        st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True})
+        st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True, "modeBarButtonsToAdd": ["pan2d"], "displayModeBar": True})
         st.markdown("---")
 
         # HTML tablo oluştur
@@ -387,6 +391,12 @@ if run or "last_ticker" in st.session_state:
             "Hacim", "Günlük Değ. (%)", "Güniçi Değ. (%)",
             "Daily Range (₺)", "Daily Range (%)", "Amihud (×10⁶)"
         ]
+
+        st.markdown(
+            "<span style='font-size:0.78em;color:#6b7280;font-family:IBM Plex Mono'>"
+            "ℹ️ Amihud sütunu: <b>|log₁₀(Amihud)|</b> — yüksek = daha az likit, düşük = daha likit</span>",
+            unsafe_allow_html=True
+        )
 
         header = "<tr><th>Tarih</th>" + "".join(f"<th>{c}</th>" for c in cols_show) + "</tr>"
         rows = ""
