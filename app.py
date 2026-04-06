@@ -291,23 +291,25 @@ if run or "last_ticker" in st.session_state:
             line=dict(color="#22c55e", width=1.5),
         ), secondary_y=False)
 
-        fig.add_trace(go.Bar(
-            x=metrics.index,
-            y=metrics["Daily Range (%)"],
-            name="Daily Range (%)",
-            marker_color="rgba(255,255,255,0.08)",
-        ), secondary_y=True)
-
-        # Trend çizgisi (lineer regresyon)
+        # Daily Range — sadece trend çizgisi
         dr = metrics["Daily Range (%)"].dropna()
-        x_num = np.arange(len(dr))
-        z = np.polyfit(x_num, dr.values, 1)
-        trend = np.poly1d(z)(x_num)
+        window = min(30, len(dr))
+        trend_vals = []
+        for i in range(len(dr)):
+            start_i = max(0, i - window + 1)
+            segment = dr.iloc[start_i:i+1]
+            x_seg = np.arange(len(segment))
+            if len(segment) >= 2:
+                z = np.polyfit(x_seg, segment.values, 1)
+                trend_vals.append(np.poly1d(z)(len(segment) - 1))
+            else:
+                trend_vals.append(segment.iloc[-1])
+
         fig.add_trace(go.Scatter(
             x=dr.index,
-            y=trend,
+            y=trend_vals,
             name="Range Trend",
-            line=dict(color="#f59e0b", width=1.8, dash="dot"),
+            line=dict(color="#f59e0b", width=1.8),
         ), secondary_y=True)
 
         fig.update_layout(
@@ -350,7 +352,7 @@ if run or "last_ticker" in st.session_state:
             tickfont=dict(color="#7dd3fc"),
             showgrid=False,
             secondary_y=True,
-            range=[0, 15],
+            range=[0, 6],
         )
 
         st.plotly_chart(fig, use_container_width=True)
