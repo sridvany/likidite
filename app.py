@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, date
 import warnings
+from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 warnings.filterwarnings("ignore")
 
@@ -281,23 +282,21 @@ if run or "last_ticker" in st.session_state:
         st.markdown("---")
 
         # ── Dual-Axis Grafik ─────────────────────────────────────────────────
-        fig = go.Figure()
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
 
         fig.add_trace(go.Scatter(
             x=metrics.index,
             y=metrics["Kapanış (₺)"],
             name="Kapanış (₺)",
             line=dict(color="#22c55e", width=1.5),
-            yaxis="y1"
-        ))
+        ), secondary_y=False)
 
         fig.add_trace(go.Bar(
             x=metrics.index,
             y=metrics["Daily Range (%)"],
             name="Daily Range (%)",
             marker_color="rgba(125, 211, 252, 0.35)",
-            yaxis="y2"
-        ))
+        ), secondary_y=True)
 
         fig.update_layout(
             paper_bgcolor="#0f1117",
@@ -307,39 +306,38 @@ if run or "last_ticker" in st.session_state:
                         bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
             margin=dict(l=10, r=10, t=40, b=10),
             height=400,
-            xaxis=dict(
-                rangeslider=dict(visible=True, bgcolor="#1e2235", thickness=0.06),
-                showgrid=False,
-                color="#94a3b8",
-                rangeselector=dict(
-                    bgcolor="#1e2235",
-                    activecolor="#7dd3fc",
-                    buttons=list([
-                        dict(count=1,  label="1M",  step="month", stepmode="backward"),
-                        dict(count=3,  label="3M",  step="month", stepmode="backward"),
-                        dict(count=6,  label="6M",  step="month", stepmode="backward"),
-                        dict(count=1,  label="1Y",  step="year",  stepmode="backward"),
-                        dict(count=3,  label="3Y",  step="year",  stepmode="backward"),
-                        dict(step="all", label="Tümü"),
-                    ])
-                ),
+        )
+        fig.update_xaxes(
+            showgrid=False,
+            color="#94a3b8",
+            rangeslider=dict(visible=True, bgcolor="#1e2235", thickness=0.06),
+            rangeselector=dict(
+                bgcolor="#1e2235",
+                activecolor="#7dd3fc",
+                buttons=list([
+                    dict(count=1,  label="1M",  step="month", stepmode="backward"),
+                    dict(count=3,  label="3M",  step="month", stepmode="backward"),
+                    dict(count=6,  label="6M",  step="month", stepmode="backward"),
+                    dict(count=1,  label="1Y",  step="year",  stepmode="backward"),
+                    dict(count=3,  label="3Y",  step="year",  stepmode="backward"),
+                    dict(step="all", label="Tümü"),
+                ])
             ),
-            yaxis=dict(
-                title="Kapanış (₺)",
-                titlefont=dict(color="#22c55e"),
-                tickfont=dict(color="#22c55e"),
-                showgrid=True,
-                gridcolor="#1e2235",
-                side="left",
-            ),
-            yaxis2=dict(
-                title="Daily Range (%)",
-                titlefont=dict(color="#7dd3fc"),
-                tickfont=dict(color="#7dd3fc"),
-                overlaying="y",
-                side="right",
-                showgrid=False,
-            ),
+        )
+        fig.update_yaxes(
+            title_text="Kapanış (₺)",
+            title_font=dict(color="#22c55e"),
+            tickfont=dict(color="#22c55e"),
+            showgrid=True,
+            gridcolor="#1e2235",
+            secondary_y=False,
+        )
+        fig.update_yaxes(
+            title_text="Daily Range (%)",
+            title_font=dict(color="#7dd3fc"),
+            tickfont=dict(color="#7dd3fc"),
+            showgrid=False,
+            secondary_y=True,
         )
 
         st.plotly_chart(fig, use_container_width=True)
