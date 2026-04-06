@@ -6,38 +6,31 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 
 # Sayfa Ayarları
-st.set_page_config(page_title="BIST Analiz Terminali", layout="wide")
+st.set_page_config(page_title="BIST Terminal Pro", layout="wide")
 
-# Görsel Stil Düzenlemeleri
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 5px; background-color: #ff4b4b; color: white; font-weight: bold; height: 3em; }
     input { text-transform: uppercase; }
-    /* Slider (Ayraç) stilini belirginleştir */
-    .stSlider { padding-bottom: 3rem; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🏛️ BIST Profesyonel Analiz & Zaman Tüneli")
+st.title("🏛️ BIST Range-Slider Destekli Analiz Terminali")
 
-# --- SIDEBAR (Global Veri Çekme) ---
+# --- SIDEBAR (Veri İndirme Paneli) ---
 with st.sidebar:
     st.header("🔍 Global Veri Çek")
     symbol_raw = st.text_input("Sembol", placeholder="Örn: THYAO").strip().upper()
     compare_raw = st.text_input("Korelasyon Sembolü", value="XU100").strip().upper()
     
     st.divider()
-    st.subheader("📅 Ana Veri Aralığı")
-    # Çok geniş bir aralık seçilebilir (1990 - Bugün)
-    min_date = datetime(1990, 1, 1)
-    max_date = datetime.now()
-    default_start = datetime.now() - timedelta(days=365*2) # Varsayılan son 2 yıl
-    
-    g_start = st.date_input("Global Başlangıç", value=default_start, min_value=min_date, max_value=max_date)
-    g_end = st.date_input("Global Bitiş", value=max_date, min_value=min_date, max_value=max_date)
+    st.subheader("📅 Veri Havuzu Aralığı")
+    # Yahoo'dan çekilecek maksimum veri sınırı
+    g_start = st.date_input("Başlangıç Tarihi", value=datetime.now() - timedelta(days=365*2))
+    g_end = st.date_input("Bitiş Tarihi", value=datetime.now())
     
     st.divider()
-    run_analysis = st.button("VERİLERİ GETİR VE ANALİZ ET")
+    run_analysis = st.button("VERİLERİ ANALİZ ET")
 
 def format_bist(s):
     if not s: return None
@@ -45,91 +38,87 @@ def format_bist(s):
 
 if run_analysis:
     if not symbol_raw:
-        st.warning("⚠️ Lütfen bir sembol giriniz.")
+        st.warning("⚠️ Önce bir sembol girin.")
     else:
-        with st.spinner('Global veriler yükleniyor...'):
+        with st.spinner('Grafikler hazırlanıyor...'):
             ticker = format_bist(symbol_raw)
             comp_ticker = format_bist(compare_raw)
             
-            # Global Veri Kümesi (Geniş aralık)
-            df_all = yf.download(ticker, start=g_start, end=g_end, interval="1d")
-            df_comp_all = yf.download(comp_ticker, start=g_start, end=g_end, interval="1d")
+            # Veriyi çek
+            df = yf.download(ticker, start=g_start, end=g_end, interval="1d")
+            df_comp = yf.download(comp_ticker, start=g_start, end=g_end, interval="1d")
 
-            if df_all.empty:
+            if df.empty:
                 st.error("Veri bulunamadı.")
             else:
-                # MultiIndex Fix
-                if isinstance(df_all.columns, pd.MultiIndex): df_all.columns = df_all.columns.get_level_values(0)
-                if isinstance(df_comp_all.columns, pd.MultiIndex): df_comp_all.columns = df_comp_all.columns.get_level_values(0)
+                if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+                if isinstance(df_comp.columns, pd.MultiIndex): df_comp.columns = df_comp.columns.get_level_values(0)
 
-                # Temel Hesaplamalar
-                df_all['Daily Range'] = (df_all['High'] - df_all['Low']).round(2)
-                df_all['Pct_Change'] = df_all['Close'].pct_change() * 100
-                df_all['Amihud'] = (df_all['Pct_Change'].abs() / (df_all['Volume'] / 1000000)).round(4)
+                # HESAPLAMALAR
+                df['Daily Range'] = (df['High'] - df['Low']).round(2)
+                df['Pct_Change'] = df['Close'].pct_change() * 100
+                df['Amihud'] = (df['Pct_Change'].abs() / (df['Volume'] / 1000000)).round(4)
 
-                # --- 1. ANA GRAFİK (Global Görünüm) ---
-                st.subheader(f"📊 {symbol_raw} Global Fiyat Hareketi")
-                fig_main = make_subplots(rows=1, cols=2, shared_yaxes=True, column_widths=[0.85, 0.15], horizontal_spacing=0.01)
-                fig_main.add_trace(go.Candlestick(x=df_all.index, open=df_all['Open'], high=df_all['High'], low=df_all['Low'], close=df_all['Close'], name="Fiyat"), row=1, col=1)
+                # --- 1. ANA GRAFİK (RANGE SLIDER BURADA) ---
+                st.subheader(f"📊 {symbol_raw} - Zaman Sürgülü Fiyat Analizi")
                 
-                # VRP (Global)
+                fig_main = make_subplots(rows=1, cols=2, shared_yaxes=True, column_widths=[0.85, 0.15], horizontal_spacing=0.01)
+                
+                # Candlestick
+                fig_main.add_trace(go.Candlestick(
+                    x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Fiyat"
+                ), row=1, col=1)
+
+                # Hacim Profili (Sağ taraftaki bar)
                 bins = 20
-                df_all['PriceBin'] = pd.cut(df_all['Close'], bins=bins)
-                v_prof = df_all.groupby('PriceBin', observed=True)['Volume'].sum()
+                df['PriceBin'] = pd.cut(df['Close'], bins=bins)
+                v_prof = df.groupby('PriceBin', observed=True)['Volume'].sum()
                 fig_main.add_trace(go.Bar(x=v_prof.values, y=[i.mid for i in v_prof.index], orientation='h', marker_color='rgba(255, 75, 75, 0.2)', name="Hacim"), row=1, col=2)
-                fig_main.update_layout(xaxis_rangeslider_visible=False, height=450, template="plotly_dark", showlegend=False, dragmode='pan')
+
+                # --- İSTEDİĞİN ÖZELLİK (RANGE SLIDER) ---
+                fig_main.update_xaxes(
+                    rangeslider_visible=True, # ALTTAKİ AYRAÇLI PANELİ AÇAR
+                    rangeselector=dict(
+                        buttons=list([
+                            dict(count=1, label="1A", step="month", stepmode="backward"),
+                            dict(count=6, label="6A", step="month", stepmode="backward"),
+                            dict(count=1, label="1Y", step="year", stepmode="backward"),
+                            dict(step="all", label="Tümü")
+                        ])
+                    )
+                )
+                
+                fig_main.update_layout(height=650, template="plotly_dark", showlegend=False, dragmode='pan')
                 st.plotly_chart(fig_main, use_container_width=True, config={'scrollZoom': True})
 
-                # --- 2. TARİH DÖNEMİ SEÇME AYRACI (Slider) ---
-                st.markdown("---")
-                st.subheader("🕒 Zaman Tüneli: Analiz Dönemini Belirle")
-                st.info("Aşağıdaki sürgüyü kaydırarak detay grafiklerin ve tablonun hangi tarih aralığını analiz edeceğini seçin.")
-                
-                # Tarihleri liste olarak alıyoruz (Slider için)
-                date_list = df_all.index.tolist()
-                
-                # Kullanıcının alt grafikler için tarih seçtiği Slider
-                start_select, end_select = st.select_slider(
-                    'Analiz edilecek tarih aralığını daraltın:',
-                    options=date_list,
-                    value=(date_list[0], date_list[-1]),
-                    format_func=lambda x: x.strftime('%d %b %Y')
-                )
-
-                # Seçilen aralığa göre veriyi FİLTRELE
-                df = df_all.loc[start_select:end_select].copy()
-                df_comp = df_comp_all.loc[start_select:end_select].copy()
-
-                # --- 3. DİNAMİK ANALİZ METRİKLERİ ---
-                st.markdown("---")
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Seçilen Gün", f"{len(df)}")
-                m2.metric("Ort. Daily Range", f"{df['Daily Range'].mean():.2f}")
-                m3.metric("Ort. Amihud", f"{df['Amihud'].mean():.4f}")
-                corr_val = df['Close'].corr(df_comp['Close'])
-                m4.metric("Korelasyon", f"{corr_val:.2f}")
-
-                # --- 4. DETAY VERİ LİSTESİ ---
-                st.subheader("📅 Seçilen Dönem Detay Listesi")
-                df['Değişim %'] = df['Pct_Change'].apply(lambda x: f"🟢 +%{x:.2f}" if x > 0 else f"🔴 -%{abs(x):.2f}" if x < 0 else "⚪ 0.00")
-                st.dataframe(df[['Open', 'High', 'Low', 'Close', 'Volume', 'Daily Range', 'Amihud', 'Değişim %']].sort_index(ascending=False), use_container_width=True, height=350)
-
-                # --- 5. DUAL AXIS GRAFİKLER (Filtrelenmiş Veriyle) ---
+                # --- 2. DETAY GRAFİKLER (DUAL AXIS + SLIDER) ---
                 st.divider()
+                st.subheader("📉 Likidite ve Volatilite Trend Analizi")
                 
-                def dual_plot(title, y1, name1, col1, y2, name2, col2, dash=None):
+                def create_dual_with_slider(title, y1, name1, col1, y2, name2, col2, dash=None):
                     f = go.Figure()
                     f.add_trace(go.Scatter(x=df.index, y=y1, name=name1, line=dict(color=col1, width=2.5), yaxis="y1"))
                     f.add_trace(go.Scatter(x=df.index, y=y2, name=name2, line=dict(color=col2, width=2.5, dash=dash), yaxis="y2"))
-                    f.update_layout(title=title, template="plotly_dark", height=400,
-                                    yaxis=dict(title=name1, tickfont=dict(color=col1)),
-                                    yaxis2=dict(title=name2, tickfont=dict(color=col2), anchor="x", overlaying="y", side="right"),
-                                    hovermode="x unified", dragmode='pan')
+                    
+                    f.update_layout(
+                        title=title, template="plotly_dark", height=500,
+                        yaxis=dict(title=name1, tickfont=dict(color=col1)),
+                        yaxis2=dict(title=name2, tickfont=dict(color=col2), anchor="x", overlaying="y", side="right"),
+                        hovermode="x unified",
+                        xaxis=dict(rangeslider_visible=True) # HER GRAFİĞİN ALTINA AYRAÇ EKLENDİ
+                    )
                     st.plotly_chart(f, use_container_width=True, config={'scrollZoom': True})
 
-                dual_plot("Amihud vs Daily Range", df['Amihud'], "Amihud", "#00FFCC", df['Daily Range'], "Daily Range", "#FFD700", dash='dot')
-                dual_plot("Daily Range vs Close", df['Close'], "Fiyat", "#FFFFFF", df['Daily Range'], "Daily Range", "#FFD700")
-                dual_plot("Amihud vs Close", df['Close'], "Fiyat", "#FFFFFF", df['Amihud'], "Amihud", "#00FFCC")
+                dual_plot_data = df.tail(100) # Sayfa yüklenince son 100 günü göster ama slider ile hepsine bakılabilir
+                
+                create_dual_with_slider("Amihud (Sol) vs Daily Range (Sağ)", df['Amihud'], "Amihud", "#00FFCC", df['Daily Range'], "Daily Range", "#FFD700", dash='dot')
+                create_dual_with_slider("Fiyat (Sol) vs Daily Range (Sağ)", df['Close'], "Fiyat", "#FFFFFF", df['Daily Range'], "Daily Range", "#FFD700")
+
+                # --- 3. TABLO ---
+                st.divider()
+                st.subheader("📅 Detay Veri Listesi")
+                df['Değişim %'] = df['Pct_Change'].apply(lambda x: f"🟢 +%{x:.2f}" if x > 0 else f"🔴 -%{abs(x):.2f}" if x < 0 else "⚪ 0.00")
+                st.dataframe(df[['Open', 'High', 'Low', 'Close', 'Volume', 'Daily Range', 'Amihud', 'Değişim %']].sort_index(ascending=False), use_container_width=True, height=400)
 
 else:
-    st.info("👈 Analizi başlatmak için soldan tarih ve sembol seçip butona basın.")
+    st.info("👈 Analizi başlatmak için sol menüden sembol ve tarih havuzunu belirleyin.")
