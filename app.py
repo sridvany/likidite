@@ -197,11 +197,11 @@ with st.sidebar:
     st.markdown("---")
     run = st.button("⚡ Veriyi Çek", use_container_width=True, type="primary")
     st.markdown("---")
-    auto_refresh = st.checkbox("🔄 Otomatik Yenile (30s)", value=False)
+    auto_refresh = st.checkbox("🔄 Otomatik Yenile (55s)", value=False)
     if auto_refresh:
         import time
         st.markdown(f"<span style='color:#6b7280;font-size:0.8em'>Son: {datetime.now().strftime('%H:%M:%S')}</span>", unsafe_allow_html=True)
-        time.sleep(30)
+        time.sleep(55)
         st.rerun()
 
 # ── Ana Alan ─────────────────────────────────────────────────────────────────
