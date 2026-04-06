@@ -112,9 +112,13 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
     daily_return = df["Close"].pct_change().abs()
     out["Amihud (×10⁶)"] = (daily_return / tl_volume * 1e6).replace([np.inf, -np.inf], np.nan)
 
+    out["log₁₀(Hacim)"] = np.log10(df["Volume"].replace(0, np.nan))
+
     amihud = out["Amihud (×10⁶)"].copy()
+    log_hacim = out["log₁₀(Hacim)"].copy()
     out = out.round(4)
     out["Amihud (×10⁶)"] = amihud
+    out["log₁₀(Hacim)"] = log_hacim.round(4)
     return out
 
 def color_val(val, col):
@@ -124,6 +128,8 @@ def color_val(val, col):
         cls = "pos" if val > 0 else ("neg" if val < 0 else "neutral")
         sign = "+" if val > 0 else ""
         return f'<span class="{cls}">{sign}{val:.2f}%</span>'
+    if col == "log₁₀(Hacim)":
+        return f'<span class="neutral">{val:.4f}</span>'
     if col == "Amihud (×10⁶)":
         log_val = abs(np.log10(val)) if val > 0 else np.nan
         if np.isnan(log_val):
@@ -342,7 +348,7 @@ if run or "last_ticker" in st.session_state:
         cols_show = [
             "Kapanış (₺)", "Açılış (₺)", "Yüksek (₺)", "Düşük (₺)",
             "Hacim", "Günlük Değ. (%)", "Güniçi Değ. (%)",
-            "Daily Range (₺)", "Daily Range (%)", "Amihud (×10⁶)"
+            "Daily Range (₺)", "Daily Range (%)", "Amihud (×10⁶)", "log₁₀(Hacim)"
         ]
 
         st.markdown(
