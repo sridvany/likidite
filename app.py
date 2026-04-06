@@ -87,19 +87,44 @@ h1, h2, h3 {
 """, unsafe_allow_html=True)
 
 # ── Yardımcı Fonksiyonlar ────────────────────────────────────────────────────
+def _flatten(df):
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [c[0] for c in df.columns]
+    else:
+        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+    return df
+
 @st.cache_data(ttl=60, show_spinner=False, persist=False)
 def fetch_data(ticker: str, start: str) -> pd.DataFrame:
     df = yf.download(ticker, start=start, auto_adjust=True, progress=False)
     if df.empty:
         return pd.DataFrame()
-    # yfinance >= 0.2.x MultiIndex sütunlarını düzleştir
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [c[0] for c in df.columns]
-    else:
-        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+    df = _flatten(df)
     df = df[~df.index.duplicated(keep="first")]
     df.dropna(subset=["Close", "Open", "High", "Low", "Volume"], inplace=True)
     return df
+
+@st.cache_data(ttl=30, show_spinner=False, persist=False)
+def fetch_live(ticker: str) -> pd.Series | None:
+    """Bugünün anlık verisini 1d periyot, 1m interval ile çek, günlük satır üret."""
+    try:
+        intra = yf.download(ticker, period="1d", interval="1m",
+                            auto_adjust=True, progress=False)
+        if intra.empty:
+            return None
+        intra = _flatten(intra)
+        today = date.today()
+        today_ts = pd.Timestamp(today)
+        row = pd.Series({
+            "Open":   intra["Open"].iloc[0],
+            "High":   intra["High"].max(),
+            "Low":    intra["Low"].min(),
+            "Close":  intra["Close"].iloc[-1],
+            "Volume": intra["Volume"].sum(),
+        }, name=today_ts)
+        return row
+    except Exception:
+        return None
 
 def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
     """Günlük kapanış, güniçi değişim, Amihud, Daily Range hesapla."""
@@ -171,6 +196,13 @@ with st.sidebar:
 
     st.markdown("---")
     run = st.button("⚡ Veriyi Çek", use_container_width=True, type="primary")
+    st.markdown("---")
+    auto_refresh = st.checkbox("🔄 Otomatik Yenile (30s)", value=False)
+    if auto_refresh:
+        import time
+        st.markdown(f"<span style='color:#6b7280;font-size:0.8em'>Son: {datetime.now().strftime('%H:%M:%S')}</span>", unsafe_allow_html=True)
+        time.sleep(30)
+        st.rerun()
 
 # ── Ana Alan ─────────────────────────────────────────────────────────────────
 st.markdown("# 📈 BIST30 Günlük Analiz Tablosu")
@@ -187,6 +219,17 @@ if run or "last_ticker" in st.session_state:
 
     with st.spinner(f"{_company} verisi çekiliyor..."):
         raw = fetch_data(_ticker, _start)
+        live = fetch_live(_ticker)
+
+    # Anlık satırı birleştir (bugünün kapanışı henüz yoksa ekle)
+    if live is not None and not raw.empty:
+        today_ts = pd.Timestamp(date.today())
+        if today_ts not in raw.index:
+            raw = pd.concat([raw, live.to_frame().T])
+        else:
+            # Güniçi verilerle güncelle
+            for col in ["Open", "High", "Low", "Close", "Volume"]:
+                raw.at[today_ts, col] = live[col]
 
     if raw.empty:
         st.error(f"❌ {_ticker} için veri bulunamadı.")
