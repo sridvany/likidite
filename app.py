@@ -520,19 +520,23 @@ if run or "last_ticker" in st.session_state:
 
         # ── İlişki Analizi ───────────────────────────────────────────────────
         st.markdown("---")
-        st.markdown("### 🔗 Close · Daily Range · Amihud İlişki Analizi")
+        st.markdown("### 🔗 Likidite Boyutları İlişki Analizi")
 
         ana = pd.DataFrame({
-            "Close":       metrics["Kapanış (₺)"],
-            "Daily Range": metrics["Daily Range (%)"],
-            "Amihud (log)": metrics["Amihud (×10⁶)"].apply(
-                lambda x: abs(np.log10(x)) if pd.notna(x) and x > 0 else np.nan)
+            "Close":         metrics["Kapanış (₺)"],
+            "Daily Range":   metrics["Daily Range (%)"],
+            "Amihud (log)":  metrics["Amihud (×10⁶)"].apply(
+                lambda x: abs(np.log10(x)) if pd.notna(x) and x > 0 else np.nan),
+            "Hacim (log)":   metrics["log₁₀(Hacim)"],
+            "C-S Spread":    metrics["C-S Spread (%)"],
+            "MEC":           metrics["MEC"],
         }).dropna()
 
         from scipy.stats import spearmanr
 
-        cols3 = ["Close", "Daily Range", "Amihud (log)"]
-        corr_matrix = np.zeros((3, 3))
+        cols3 = ["Close", "Daily Range", "Amihud (log)", "Hacim (log)", "C-S Spread", "MEC"]
+        n = len(cols3)
+        corr_matrix = np.zeros((n, n))
         for i, c1 in enumerate(cols3):
             for j, c2 in enumerate(cols3):
                 r, _ = spearmanr(ana[c1], ana[c2])
@@ -545,14 +549,14 @@ if run or "last_ticker" in st.session_state:
             zmin=-1, zmax=1,
             text=corr_matrix.round(2),
             texttemplate="%{text}",
-            textfont=dict(size=14, family="IBM Plex Mono"),
+            textfont=dict(size=12, family="IBM Plex Mono"),
             showscale=True,
         ))
         heat_fig.update_layout(
             paper_bgcolor="#0f1117", plot_bgcolor="#0f1117",
             font=dict(family="IBM Plex Mono", color="#94a3b8", size=11),
             margin=dict(l=10, r=10, t=30, b=10),
-            height=280,
+            height=380,
             title=dict(text="Spearman Korelasyon Matrisi", font=dict(color="#94a3b8", size=12)),
         )
         st.plotly_chart(heat_fig, use_container_width=True)
@@ -560,9 +564,11 @@ if run or "last_ticker" in st.session_state:
         st.markdown("**Rolling Spearman Korelasyon (60 gün)**")
         roll_window = 60
         pairs = [
-            ("Close", "Daily Range", "#7dd3fc"),
+            ("Close", "Daily Range",  "#7dd3fc"),
             ("Close", "Amihud (log)", "#f59e0b"),
-            ("Daily Range", "Amihud (log)", "#a78bfa"),
+            ("Close", "Hacim (log)",  "#22c55e"),
+            ("Close", "C-S Spread",   "#a78bfa"),
+            ("Close", "MEC",          "#fb923c"),
         ]
         roll_fig = go.Figure()
         for c1, c2, color in pairs:
