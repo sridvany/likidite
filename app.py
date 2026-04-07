@@ -292,7 +292,7 @@ with st.sidebar:
     st.markdown("---")
     analiz_modu = st.radio(
         "📐 Analiz Modu",
-        options=["📅 Günlük", "⏱️ 2 Dakikalık"],
+        options=["📅 Günlük", "📊 Güniçi"],
         index=0,
     )
 
@@ -400,7 +400,7 @@ if run or "last_ticker" in st.session_state:
     _intraday_date = st.session_state.get("last_intraday_date")
 
     # ── 2 Dakikalık Mod ──────────────────────────────────────────────────────
-    if _mode == "⏱️ 2 Dakikalık":
+    if _mode == "📊 Güniçi":
         sel_date = _intraday_date or str(date.today())
         with st.spinner(f"{_ticker} güniçi verisi çekiliyor..."):
             df_day  = fetch_intraday(_ticker, sel_date)
