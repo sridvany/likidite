@@ -365,7 +365,8 @@ if run or "last_ticker" in st.session_state:
             amihud_pct= pct(amihud_s, amihud_v) if amihud_v else 50
             hacim_pct = pct(m["Hacim"], son["Hacim"])
             cs_valid  = m[m["C-S Spread (%)"] > 0]["C-S Spread (%)"]
-            cs_pct    = pct(cs_valid, son["C-S Spread (%)"]) if (son["C-S Spread (%)"] > 0 and len(cs_valid) > 0) else None
+            cs_son    = cs_valid.iloc[-1] if len(cs_valid) > 0 else None
+            cs_pct    = pct(cs_valid, cs_son) if cs_son is not None else None
             mec_pct   = pct(m["MEC"].dropna(), son["MEC"]) if pd.notna(son["MEC"]) else None
 
             # ── Trend yönü (son 20 gün ortalaması vs önceki 20 gün) ──────────
@@ -429,7 +430,7 @@ if run or "last_ticker" in st.session_state:
                 "Daily Range":  ("Anındalık",  f"%{dr_pct:.0f} persentil"),
                 "Amihud":       ("Genişlik",   f"%{amihud_pct:.0f} persentil"),
                 "Hacim":        ("Derinlik",   f"%{hacim_pct:.0f} persentil"),
-                "C-S Spread":   ("Sıkılık",    f"%{cs_pct:.0f} persentil" if cs_pct else "—"),
+                "C-S Spread":   ("Sıkılık",    f"%{cs_pct:.0f} persentil" if cs_pct is not None else "—"),
                 "MEC":          ("Esneklik",   f"MEC = {son['MEC']:.3f}" if pd.notna(son["MEC"]) else "—"),
             }
 
@@ -472,7 +473,7 @@ if run or "last_ticker" in st.session_state:
                 paragraf.append(f"Günlük fiyat aralığı tarihsel dağılımın %{dr_pct:.0f}'lik dilimine girmiş; anındalık zayıf.")
             
             if cs_pct is not None and sinyaller.get("C-S Spread", ("nötr",))[0] == "kötü":
-                paragraf.append(f"Bid-ask spread %{cs_pct:.0f} persentilde — işlem maliyeti yüksek.")
+                paragraf.append(f"Bid-ask spread (son geçerli: %{cs_son:.4f}) %{cs_pct:.0f} persentilde — işlem maliyeti yüksek.")
 
             if pd.notna(son.get("MEC")):
                 if son["MEC"] > 1:
