@@ -372,8 +372,27 @@ MEC ≈ 1 veya < 1 → piyasa dayanıklı (resilient).
 MEC > 1 → fiyat yeni dengeye yavaş dönüyor = düşük esneklik.
         """)
 
-    st.markdown("---")
-    run = st.button("⚡ Veriyi Çek", use_container_width=True, type="primary")
+    with st.expander("📖 RVOL — Göreceli Hacim"):
+        st.markdown("""
+**RVOL (Relative Volume — Göreceli Hacim)**, bir zaman dilimindeki işlem hacminin, aynı zaman diliminin geçmiş ortalamasına oranıdır.
+
+**Formül:** `RVOL = Anlık Hacim / Aynı Saatin Geçmiş Ortalama Hacmi`
+
+**Nasıl okunur:**
+- `RVOL = 1.0` → Normal gün, beklenen hacim düzeyinde
+- `RVOL > 1.5` → Normalin 1.5 katı hacim — piyasada olağandışı bir hareket var
+- `RVOL > 2.0` → Güçlü sinyal — kurumsal alım/satım, haber, vb.
+- `RVOL < 0.8` → Zayıf hacim — piyasa ilgisiz, ince işlem
+- `RVOL < 0.5` → Çok düşük katılım — büyük emirler fiyatı kolayca hareket ettirebilir
+
+**Fiyat yönüyle birlikte okuma:**
+- Fiyat ↑ + RVOL yüksek → Güçlü alım, hareket inandırıcı
+- Fiyat ↑ + RVOL düşük → Zayıf alım, sürmeyebilir
+- Fiyat ↓ + RVOL yüksek → Güçlü satış, panik/kurumsal çıkış
+- Fiyat ↓ + RVOL düşük → Zayıf satış, teknik düzeltme olabilir
+
+**Bu uygulamada:** Son 60 günün aynı 2dk zaman dilimine ait ortalama hacmi referans alınır.
+        """)
     st.markdown("---")
     auto_refresh = st.checkbox("🔄 Otomatik Yenile (55s)", value=False)
     if auto_refresh:
