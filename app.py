@@ -961,7 +961,7 @@ if run or "last_ticker" in st.session_state:
         .data-table {{ width:100%;border-collapse:collapse;font-size:0.82em;margin-top:8px;table-layout:fixed; }}
         .data-table th {{ background:#1e2235;color:#7dd3fc;font-family:'IBM Plex Mono',monospace;font-weight:600;padding:6px 4px;text-align:right;border-bottom:2px solid #2a2d3e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }}
         .data-table th:first-child {{ text-align:left;width:80px; }}
-        .data-table th:not(:first-child) {{ width:90px; }}
+        .data-table th:not(:first-child) {{ width:80px; }}
         .data-table td {{ padding:5px 4px;text-align:right;border-bottom:1px solid #1e2235;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }}
         .data-table td:first-child {{ text-align:left; }}
         .data-table tr:hover td {{ background:#141824; }}
