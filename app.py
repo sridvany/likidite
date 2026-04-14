@@ -307,7 +307,7 @@ with st.sidebar:
         st.markdown("**📅 Başlangıç Tarihi**")
         start_date = st.date_input(
             "Başlangıç",
-            value=date(1990, 1, 1),
+            value=date(2000, 1, 1),
             min_value=date(1990, 1, 1),
             max_value=date.today(),
             label_visibility="collapsed"
