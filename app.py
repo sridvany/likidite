@@ -938,8 +938,7 @@ if run or "last_ticker" in st.session_state:
         st.markdown("---")
 
         cols_show = [
-            "Kapanış (₺)", "Açılış (₺)", "Yüksek (₺)", "Düşük (₺)",
-            "Hacim", "Günlük Değ. (%)", "Güniçi Değ. (%)",
+            "Günlük Değ. (%)", "Güniçi Değ. (%)",
             "Daily Range (₺)", "Daily Range (%)", "Amihud (×10⁶)", "log₁₀(Hacim)",
             "C-S Spread (%)", "MEC"
         ]
