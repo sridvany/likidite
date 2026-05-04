@@ -174,6 +174,16 @@ def compute_intraday_metrics(df: pd.DataFrame, df_60d: pd.DataFrame) -> pd.DataF
     cs    = 2 * (np.exp(alpha) - 1) / (1 + np.exp(alpha))
     out["C-S Spread (%)"] = (cs * 100).round(4)
 
+    # ── Parkinson — bar bazında volatilite (%) ──────────────────────────────
+    ln_hl = np.log(df["High"] / df["Low"])
+    out["Parkinson (%)"] = (np.sqrt(1 / (4 * np.log(2))) * ln_hl * 100).round(4)
+
+    # ── Garman-Klass — bar bazında volatilite (%) ───────────────────────────
+    ln_co = np.log(df["Close"] / df["Open"])
+    gk_var = 0.5 * ln_hl**2 - (2 * np.log(2) - 1) * ln_co**2
+    gk_var = gk_var.clip(lower=0)
+    out["Garman-Klass (%)"] = (np.sqrt(gk_var) * 100).round(4)
+
     if not df_60d.empty:
         df_60d = df_60d.copy()
         df_60d["time_key"] = df_60d.index.strftime("%H:%M")
@@ -223,6 +233,18 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
     alpha = alpha.clip(lower=0)
     cs    = 2 * (np.exp(alpha) - 1) / (1 + np.exp(alpha))
     out["C-S Spread (%)"] = (cs * 100).round(4)
+
+    # ── Parkinson (1980) — günlük volatilite (%) ────────────────────────────
+    # σ_P = √(1/(4·ln2)) · |ln(H/L)| × 100   — sadece H-L bazlı
+    ln_hl = np.log(df["High"] / df["Low"])
+    out["Parkinson (%)"] = (np.sqrt(1 / (4 * np.log(2))) * ln_hl * 100).round(4)
+
+    # ── Garman-Klass (1980) — günlük volatilite (%) ─────────────────────────
+    # σ_GK² = 0.5·(ln(H/L))² − (2·ln2 − 1)·(ln(C/O))²   — OHLC bazlı, daha verimli
+    ln_co = np.log(df["Close"] / df["Open"])
+    gk_var = 0.5 * ln_hl**2 - (2 * np.log(2) - 1) * ln_co**2
+    gk_var = gk_var.clip(lower=0)
+    out["Garman-Klass (%)"] = (np.sqrt(gk_var) * 100).round(4)
 
     # ── MEC (Market Efficiency Coefficient) — 90 günlük rolling ─────────────
     # MEC = 6 × Var(ln(Ct/Ct-5)) / Var(ln(Ct/Ct-30))
@@ -340,6 +362,16 @@ with st.sidebar:
     )
     secondary_metric = secondary_metric.split(" — ")[0]
 
+    volatility_metric = st.radio(
+        "📈 Volatilite Boyutları",
+        options=[
+            "Parkinson (%) — Güniçi Salınım",
+            "Garman-Klass (%) — OHLC Verimli",
+        ],
+        index=0,
+    )
+    volatility_metric = volatility_metric.split(" — ")[0]
+
     with st.expander("📖 Boyut Tanımları"):
         st.markdown("""
 **📊 Daily Range — Anındalık**
@@ -375,6 +407,20 @@ Haftalık getiri varyansının günlük getiri varyansına oranı (90 günlük r
 Piyasanın yeni dengesine ne kadar hızlı döndüğünü ölçer.
 MEC ≈ 1 veya < 1 → piyasa dayanıklı (resilient).
 MEC > 1 → fiyat yeni dengeye yavaş dönüyor = düşük esneklik.
+
+---
+
+**📈 Parkinson (1980) — Güniçi Salınım**
+σ = √(1/(4·ln2)) · |ln(H/L)| × 100. Sadece günlük yüksek-düşük tabanlı.
+Saf güniçi salınımı ölçer; kapanış-kapanış std'sinden ~5x daha verimli.
+Yüksek = trend dışı dalgalanma yoğun.
+
+---
+
+**📈 Garman-Klass (1980) — OHLC Verimli**
+σ² = 0.5·(ln(H/L))² − (2·ln2−1)·(ln(C/O))². Tüm OHLC'yi kullanır.
+Parkinson'a göre daha düşük varyans (~7.4x verimlilik).
+Open-Close hareketini hesaba kattığı için drift'li günlerde daha doğru.
         """)
 
     with st.expander("📖 RVOL — Göreceli Hacim"):
@@ -424,6 +470,7 @@ if run or "last_ticker" in st.session_state:
     _ticker        = st.session_state.get("last_ticker", ticker_input)
     _start         = st.session_state.get("last_start", str(start_date))
     _secondary     = secondary_metric
+    _volatility    = volatility_metric
     _mode          = st.session_state.get("last_mode", analiz_modu)
     _intraday_date = st.session_state.get("last_intraday_date")
 
@@ -895,6 +942,13 @@ if run or "last_ticker" in st.session_state:
             fig.add_trace(go.Scatter(x=sec_data.index, y=trend_vals,
                 name=f"{sec_col} Trend", line=dict(color="#f59e0b", width=1.8)), secondary_y=True)
 
+        # ── Volatilite trace (sağ eksen, ikinci çizgi) ──────────────────────
+        vol_col   = _volatility
+        vol_data  = metrics[vol_col].dropna()
+        vol_color = "#06b6d4" if vol_col == "Parkinson (%)" else "#ec4899"
+        fig.add_trace(go.Scatter(x=vol_data.index, y=vol_data.values,
+            name=vol_col, line=dict(color=vol_color, width=1.2, dash="dot")), secondary_y=True)
+
         fig.update_layout(
             paper_bgcolor="#0f1117", plot_bgcolor="#0f1117",
             font=dict(family="IBM Plex Mono", color="#94a3b8", size=11),
@@ -969,7 +1023,7 @@ if run or "last_ticker" in st.session_state:
         st.markdown(table_html, unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown("### 🔗 Likidite Boyutları İlişki Analizi")
+        st.markdown("### 🔗 Likidite & Volatilite Boyutları İlişki Analizi")
 
         ana = pd.DataFrame({
             "Close":        metrics["Kapanış (₺)"],
@@ -979,9 +1033,11 @@ if run or "last_ticker" in st.session_state:
             "Hacim (log)":  metrics["log₁₀(Hacim)"],
             "C-S Spread":   metrics["C-S Spread (%)"],
             "MEC":          metrics["MEC"],
+            "Parkinson":    metrics["Parkinson (%)"],
+            "Garman-Klass": metrics["Garman-Klass (%)"],
         }).dropna()
 
-        cols3 = ["Close", "Daily Range", "Amihud (log)", "Hacim (log)", "C-S Spread", "MEC"]
+        cols3 = ["Close", "Daily Range", "Amihud (log)", "Hacim (log)", "C-S Spread", "MEC", "Parkinson", "Garman-Klass"]
         n = len(cols3)
         corr_matrix = np.zeros((n, n))
         for i, c1 in enumerate(cols3):
@@ -1012,6 +1068,8 @@ if run or "last_ticker" in st.session_state:
             ("Close", "Hacim (log)",  "#22c55e"),
             ("Close", "C-S Spread",   "#a78bfa"),
             ("Close", "MEC",          "#fb923c"),
+            ("Close", "Parkinson",    "#06b6d4"),
+            ("Close", "Garman-Klass", "#ec4899"),
         ]
         roll_fig = go.Figure()
         for c1, c2, color in pairs:
