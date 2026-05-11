@@ -205,6 +205,28 @@ def compute_intraday_metrics(df: pd.DataFrame, df_60d: pd.DataFrame) -> pd.DataF
     cs    = 2 * (np.exp(alpha) - 1) / (1 + np.exp(alpha))
     out["C-S Spread (%)"] = (cs * 100).round(4)
 
+    # ── MEC (Market Efficiency Coefficient) — 60 bar rolling ─────────────────
+    # MEC = Var(ln Ct/Ct-18) / (6 × Var(ln Ct/Ct-3))
+    # Kısa: 3 bar (6dk), Uzun: 18 bar (36dk), T = 18/3 = 6
+    # Random walk altında ≈ 1; ≤1 mean-revert/dayanıklı, >1 trend/yavaş döngü
+    r3  = np.log(df["Close"] / df["Close"].shift(3))
+    r18 = np.log(df["Close"] / df["Close"].shift(18))
+    win = 60
+    mec_vals = []
+    for i in range(len(df)):
+        if i < win:
+            mec_vals.append(np.nan)
+            continue
+        seg3  = r3.iloc[i - win + 1: i + 1].dropna()
+        seg18 = r18.iloc[i - win + 1: i + 1].dropna()
+        var3  = seg3.var(ddof=1)  if len(seg3)  > 1 else np.nan
+        var18 = seg18.var(ddof=1) if len(seg18) > 1 else np.nan
+        if pd.notna(var18) and pd.notna(var3) and var3 > 0:
+            mec_vals.append(round(var18 / (6 * var3), 4))
+        else:
+            mec_vals.append(np.nan)
+    out["MEC"] = mec_vals
+
     # ── ATR (Wilder, 30 bar ≈ 1 saat) — güniçi volatilite (₺) ───────────────
     # Tek-gün df, ilk barın Cprev'i NaN → TR otomatik H−L (gap reset doğal).
     prev_close = df["Close"].shift(1)
@@ -324,6 +346,7 @@ def build_intraday_payload(intra: pd.DataFrame, ticker: str, sel_date: str,
             "Amihud_2dk":    _col_summary(intra, "Amihud (2dk)"),
             "C-S_Spread_%":  _col_summary(intra, "C-S Spread (%)"),
             "RVOL":          _col_summary(intra, "RVOL"),
+            "MEC":           _col_summary(intra, "MEC"),
         },
         "volatilite": {
             "ATR_TL":        _col_summary(intra, "ATR"),
@@ -456,7 +479,7 @@ VERİ:
 Günün likidite + volatilite imzasını özetle.
 
 ## 💧 Güniçi Likidite
-Bar Range, Amihud, C-S Spread, RVOL profilini değerlendir. RVOL > 1.5 baskın mı, yoksa ince işlem mi?
+Bar Range, Amihud, C-S Spread, RVOL, MEC profilini değerlendir. RVOL > 1.5 baskın mı, yoksa ince işlem mi? MEC ≤1 dayanıklı/mean-revert, >1 yavaş döngü.
 
 ## 📈 Güniçi Volatilite
 ATR bar bazında salınım büyüklüğünü gösteriyor mu? Trend nedir?
@@ -466,7 +489,7 @@ ATR bar bazında salınım büyüklüğünü gösteriyor mu? Trend nedir?
 Günün likidite + volatilite imzasını özetle, rejim adı ver.
 
 ## 💧 Güniçi Likidite
-Bar Range, Amihud, C-S Spread, RVOL profilini değerlendir. RVOL ortalaması, persentili. Hangi metrik uç değerde?
+Bar Range, Amihud, C-S Spread, RVOL, MEC profilini değerlendir. RVOL ortalaması, persentili. Hangi metrik uç değerde? MEC'i 1.0 eşiğiyle yorumla (≤1 dayanıklı, >1 yavaş döngü).
 
 ## 📈 Güniçi Volatilite
 ATR seviyesini ve seyrini yorumla. Bar başına ortalama hareket aralığı ne durumda?
@@ -582,6 +605,122 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
     out["log₁₀(Hacim)"]  = log_hacim.round(4)
     return out
 
+# ── 🔬 LAB — Aşama 1: Altyapı ─────────────────────────────────────────────────
+# Ham metrik tablosuna rolling z-skor (_z), rolling persentile (_pct) ve
+# forward return (fwd_ret_N) sütunları ekler. Günlük ve güniçi için aynı API.
+
+# Lab feature sütunları — scale'e göre eşleme
+LAB_FEATURES_DAILY = [
+    "Daily Range (%)", "Amihud (×10⁶)", "log₁₀(Hacim)",
+    "C-S Spread (%)", "MEC", "ATR", "Günlük Değ. (%)",
+]
+LAB_FEATURES_INTRADAY = [
+    "Bar Range (%)", "RVOL", "Amihud (2dk)",
+    "C-S Spread (%)", "MEC", "ATR", "Değişim (%)",
+]
+
+def build_lab_frame(metrics: pd.DataFrame, *, scale: str,
+                    horizons: list[int], lookback: int) -> pd.DataFrame:
+    """Lab altyapı frame'i.
+
+    Parametreler
+    ------------
+    metrics  : compute_metrics (daily) veya compute_intraday_metrics (intraday) çıktısı
+    scale    : "daily" | "intraday"
+    horizons : ufuk listesi; daily için gün, intraday için bar (örn [1,5,20] / [3,10,30])
+    lookback : z-skor + persentile için rolling pencere (daily 252, intraday 60 önerilir)
+
+    Döner
+    -----
+    DataFrame
+        Orijinal sütunlar + her feature için "{col}_z" ve "{col}_pct" +
+        her ufuk için "fwd_ret_{N}" (%). Intraday'de ek olarak "fwd_ret_eod".
+    """
+    if metrics is None or metrics.empty:
+        return metrics
+
+    df = metrics.copy()
+    feat_cols = LAB_FEATURES_DAILY if scale == "daily" else LAB_FEATURES_INTRADAY
+    feat_cols = [c for c in feat_cols if c in df.columns]
+
+    # 1) Rolling z-skor ve persentile -----------------------------------------
+    min_p = max(10, lookback // 4)
+    for c in feat_cols:
+        s = pd.to_numeric(df[c], errors="coerce")
+        roll = s.rolling(lookback, min_periods=min_p)
+        mu, sd = roll.mean(), roll.std(ddof=1)
+        df[f"{c}_z"]   = ((s - mu) / sd.replace(0, np.nan)).round(4)
+        try:
+            df[f"{c}_pct"] = roll.rank(pct=True).round(4)
+        except Exception:
+            # Eski pandas için fallback
+            df[f"{c}_pct"] = s.rolling(lookback, min_periods=min_p).apply(
+                lambda x: (x.iloc[-1] > x.iloc[:-1]).mean() if len(x) > 1 else np.nan,
+                raw=False,
+            ).round(4)
+
+    # 2) Forward return (%) ---------------------------------------------------
+    if "Kapanış" in df.columns:
+        close = pd.to_numeric(df["Kapanış"], errors="coerce")
+        for h in horizons:
+            df[f"fwd_ret_{h}"] = ((close.shift(-h) / close - 1.0) * 100).round(4)
+        if scale == "intraday" and len(close) > 1:
+            last_px = close.iloc[-1]
+            df["fwd_ret_eod"] = ((last_px / close - 1.0) * 100).round(4)
+            df.loc[df.index[-1], "fwd_ret_eod"] = np.nan
+
+    return df
+
+
+def render_lab_panel(metrics: pd.DataFrame, *, scale: str,
+                     horizons: list[int], lookback: int) -> None:
+    """Aşama 1 önizleme paneli: frame özeti + son bar feature kartı + tail."""
+    if metrics is None or metrics.empty:
+        st.info("🔬 Lab: veri yok.")
+        return
+
+    lab = build_lab_frame(metrics, scale=scale, horizons=horizons, lookback=lookback)
+    feat_cols = LAB_FEATURES_DAILY if scale == "daily" else LAB_FEATURES_INTRADAY
+    feat_cols = [c for c in feat_cols if c in lab.columns]
+    fwd_cols  = [c for c in lab.columns if c.startswith("fwd_ret_")]
+
+    st.markdown("## 🔬 Lab — Aşama 1: Altyapı")
+    st.caption(
+        f"Ölçek: **{scale}** · Lookback: **{lookback}** · "
+        f"Ufuklar: **{horizons}** · Frame: **{lab.shape[0]} × {lab.shape[1]}**"
+    )
+
+    # Son bar feature kartı: değer | z | persentil ----------------------------
+    last = lab.iloc[-1]
+    rows = []
+    for c in feat_cols:
+        rows.append({
+            "Metrik": c,
+            "Değer":  last[c]            if c in lab.columns else np.nan,
+            "z":      last.get(f"{c}_z",   np.nan),
+            "pct":    last.get(f"{c}_pct", np.nan),
+        })
+    card = pd.DataFrame(rows)
+    st.markdown("**Son bar — feature kartı**")
+    st.dataframe(
+        card.style.format({"Değer": "{:.4f}", "z": "{:+.2f}", "pct": "{:.2%}"}),
+        use_container_width=True, hide_index=True,
+    )
+
+    # Forward return durumu (kaç satır NaN değil) -----------------------------
+    if fwd_cols:
+        valid = {c: int(lab[c].notna().sum()) for c in fwd_cols}
+        st.markdown("**Forward return — geçerli satır sayısı**")
+        st.dataframe(
+            pd.DataFrame([valid]).T.rename(columns={0: "valid_n"}),
+            use_container_width=True,
+        )
+
+    # Tail preview ------------------------------------------------------------
+    with st.expander("📋 Frame tail (son 20)"):
+        st.dataframe(lab.tail(20), use_container_width=True)
+
+
 def color_val(val, col):
     if pd.isna(val):
         return '<span class="neutral">—</span>'
@@ -629,6 +768,26 @@ with st.sidebar:
         options=["📅 Günlük", "📊 Güniçi"],
         index=0,
     )
+
+    st.markdown("---")
+    lab_mode = st.checkbox("🔬 Lab Modu", value=False,
+                           help="Forward return + z-skor + persentile altyapısı")
+    if lab_mode:
+        if analiz_modu == "📅 Günlük":
+            lab_horizons = st.multiselect(
+                "Ufuk (gün)", options=[1, 5, 10, 20, 60],
+                default=[1, 5, 20],
+            )
+            lab_lookback = st.slider("Lookback (gün)", 60, 504, 252, 30)
+        else:
+            lab_horizons = st.multiselect(
+                "Ufuk (bar)", options=[3, 5, 10, 20, 30],
+                default=[3, 10, 30],
+            )
+            lab_lookback = st.slider("Lookback (bar)", 20, 120, 60, 10)
+    else:
+        lab_horizons = []
+        lab_lookback = 0
 
     st.markdown("---")
     if analiz_modu == "📅 Günlük":
@@ -817,6 +976,11 @@ if run or "last_ticker" in st.session_state:
             st.markdown(f"### ⏱️ {_ticker} — {pd.Timestamp(sel_date).strftime('%d.%m.%Y')} Güniçi Analiz")
             intra = compute_intraday_metrics(df_day, df_60d)
 
+            if lab_mode:
+                render_lab_panel(intra, scale="intraday",
+                                 horizons=lab_horizons, lookback=lab_lookback)
+                st.markdown("---")
+
             # Resmi kapanış (auction dahil) için 1d seri; bar-level metrikler 2dk seriden
             daily = fetch_daily_ohlc(_ticker, sel_date)
             open_p  = daily.get("open",   float(df_day["Open"].iloc[0]))
@@ -889,6 +1053,7 @@ if run or "last_ticker" in st.session_state:
                 amihud_ort = intra["Amihud (2dk)"].mean()
                 cs_valid   = intra[intra["C-S Spread (%)"] > 0]["C-S Spread (%)"]
                 cs_ort     = cs_valid.mean() if not cs_valid.empty else np.nan
+                mec_ort    = intra["MEC"].mean()
 
                 sinyaller = {}
                 if pd.notna(rvol_ort):
@@ -897,6 +1062,8 @@ if run or "last_ticker" in st.session_state:
                     sinyaller["Amihud"] = "kötü" if amihud_ort > intra["Amihud (2dk)"].quantile(0.75) else "iyi"
                 if pd.notna(cs_ort):
                     sinyaller["C-S"]    = "kötü" if cs_ort > cs_valid.quantile(0.75) else "iyi"
+                if pd.notna(mec_ort):
+                    sinyaller["MEC"]    = "iyi" if mec_ort <= 1.0 else "kötü"
 
                 kotu = sum(1 for s in sinyaller.values() if s == "kötü")
                 iyi  = sum(1 for s in sinyaller.values() if s == "iyi")
@@ -1011,7 +1178,7 @@ if run or "last_ticker" in st.session_state:
             st.markdown("---")
 
             cols_intra = ["Kapanış", "Açılış", "Yüksek", "Düşük", "Hacim",
-                          "Değişim (%)", "Bar Range (%)", "RVOL", "Amihud (2dk)", "C-S Spread (%)", "ATR"]
+                          "Değişim (%)", "Bar Range (%)", "RVOL", "Amihud (2dk)", "C-S Spread (%)", "MEC", "ATR"]
             disp_intra = intra[cols_intra].iloc[::-1]
 
             header_i = "<tr><th>Zaman</th>" + "".join(f"<th>{c}</th>" for c in cols_intra) + "</tr>"
@@ -1032,6 +1199,9 @@ if run or "last_ticker" in st.session_state:
                     if col == "Amihud (2dk)":
                         lv = abs(np.log10(val)) if val > 0 else np.nan
                         return f'<span class="neutral">{lv:.2f}</span>' if pd.notna(lv) else '<span class="neutral">—</span>'
+                    if col == "MEC":
+                        cls = "pos" if val <= 1.0 else "neg"
+                        return f'<span class="{cls}">{val:.4f}</span>'
                     return f'<span class="neutral">{val:.4f}</span>'
                 cells = "".join(f"<td>{cv(row[c], c)}</td>" for c in cols_intra)
                 rows_i += f"<tr><td><span style='font-family:IBM Plex Mono;font-size:0.85em;color:#94a3b8'>{zaman}</span></td>{cells}</tr>"
@@ -1120,6 +1290,11 @@ if run or "last_ticker" in st.session_state:
         # Volatilite (ATR) — son değer + 252g persentil etiketi
         metrics = compute_metrics(raw)
         display = metrics.iloc[::-1].head(n_rows)
+
+        if lab_mode:
+            render_lab_panel(metrics, scale="daily",
+                             horizons=lab_horizons, lookback=lab_lookback)
+            st.markdown("---")
 
         atr_series_d = metrics["ATR"].dropna()
         atr_today_d  = float(atr_series_d.iloc[-1]) if not atr_series_d.empty else None
